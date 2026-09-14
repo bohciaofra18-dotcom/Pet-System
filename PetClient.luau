@@ -1,4 +1,5 @@
 -- // Services
+-- Initializing core Roblox services required for data handling, UI, sounds, and player management.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -7,17 +8,20 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local SoundService = game:GetService("SoundService")
 
 -- // Directories
+-- Setting up references to shared folders and storage inside ReplicatedStorage.
 local UI = ReplicatedStorage:WaitForChild("UI")
 local Functions = ReplicatedStorage:WaitForChild("Functions")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 -- // Player References
+-- Defining local player variables and references to their GUI and player scripts.
 local Player = Players.LocalPlayer
 local PlayerGUI = Player.PlayerGui
 local PlayerScripts = Player:WaitForChild("PlayerScripts")
 
 -- // UI References
+-- Grabbing references to various UI components related to egg hatching and shops.
 local HatchUI = PlayerGUI:WaitForChild("HatchUI")
 local HatchingContainer = HatchUI:WaitForChild("HatchingFrame")
 local AnimEggFrame = HatchingContainer:WaitForChild("EggFrame")
@@ -32,21 +36,25 @@ local MainShopUI = PlayerGUI:WaitForChild("Pets", 10)
 local MainShopFrame = MainShopUI and MainShopUI:WaitForChild("PetsFrame", 10)
 
 -- // Modules & Configs
+-- Loading essential configuration modules, notification handlers, and utility scripts.
 local NotificationModule = require(Modules.NotificationManager)
 local RaritiesModule = require(ReplicatedStorage.Configs.Rarities)
 local HideUIS = require(UI.HideButtons)
 
 -- // Sounds
+-- Caching sound instances used for egg cracking and opening effects.
 local CrackSoundTemplate = SoundService:WaitForChild("Sounds"):WaitForChild("Egg"):WaitForChild("Crack Egg Crunchy 9 (SFX)")
 local BlockOpenSound = SoundService:WaitForChild("Sounds"):WaitForChild("Egg"):WaitForChild("LuckyBlockOpen")
 
 -- // Remotes & Functions
+-- Referencing remote functions and remote events for server communication.
 local HatchPetFunction = Functions:WaitForChild("HatchPet")
 local TripleHatchFunction = Functions:WaitForChild("TripleHatchPet")
 local GetData_RF = Functions:WaitForChild("GetData")
 local PaidHatchBroadcast = Remotes:WaitForChild("PaidHatchBroadcast")
 
 -- // Constants
+-- Defining constants such as group IDs and developer product IDs for purchases.
 local GROUP_ID = 679870044
 
 local GODLY_PRODUCT_1X = 3610846982
@@ -60,16 +68,19 @@ local BRAINROT_PRODUCT_3X = 3610515885
 local BRAINROT_PRODUCT_10X = 3610515931
 
 -- // State Variables
+-- Tracking the current state of hatching processes, threads, and skip flags.
 local isHatching = false
 local isAutoHatching = false
 local autoHatchThread = nil
 local isSkipped = false
 
 -- // Queue System Variables
+-- Managing the animation queue to handle multiple hatching requests sequentially.
 local AnimationQueue = {}
 local isProcessingQueue = false
 
 -- // Egg Mappings
+-- Mapping egg names to their corresponding 3D asset models in the workspace.
 local EggModelMapping = {
 	["COMMON EGG_World1"] = "Meowl Lucky Block",
 	["RARE EGG_World1"] = "DEVELOPER Lucky Block",
@@ -84,6 +95,7 @@ local EggModelMapping = {
 	["DOMINUS EGG"] = "Dominus Egg"
 }
 
+-- Aliases to resolve specific world-based egg data names.
 local WorldEggDataAliases = {
 	World2 = {
 		["COMMON EGG"] = "COMMON1 EGG",
@@ -92,6 +104,7 @@ local WorldEggDataAliases = {
 	},
 }
 
+-- Resolves the correct data name for an egg depending on its world folder.
 local function ResolveDataEggName(eggName, worldFolder)
 	local aliases = WorldEggDataAliases[worldFolder]
 	return (aliases and aliases[eggName]) or eggName
@@ -101,6 +114,7 @@ local PetClient = {}
 
 StopAutoHatch.Visible = false
 
+-- Helper function to wait for a specific duration or skip immediately if requested.
 local function WaitOrSkip(duration: number): boolean
 	local startTime = os.clock()
 	while (os.clock() - startTime) < duration do
@@ -110,6 +124,7 @@ local function WaitOrSkip(duration: number): boolean
 	return isSkipped
 end
 
+-- Clones a sound effect, plays it in the workspace, and destroys it after completion.
 local function SoundClone(sound)
 	local clone = sound:Clone()
 	clone.Parent = workspace
@@ -120,6 +135,7 @@ local function SoundClone(sound)
 	return clone
 end
 
+-- Sets up the 3D model inside a ViewportFrame for visual egg representation.
 local function SetupViewportModel(viewport, eggName, worldFolder)
 	viewport:ClearAllChildren()
 	viewport.Visible = true
@@ -163,6 +179,7 @@ local function SetupViewportModel(viewport, eggName, worldFolder)
 	return modelClone
 end
 
+-- Applies dynamic text colors and stroke effects based on the pet's rarity.
 local function ApplyRarityColors(textLabel, rarityName)
 	if RaritiesModule and RaritiesModule[rarityName] then
 		local rarityData = RaritiesModule[rarityName]
@@ -176,6 +193,7 @@ local function ApplyRarityColors(textLabel, rarityName)
 	end
 end
 
+-- Displays the successfully hatched pet's details on the UI with a pop-in tween.
 local function RevealPet(petData)
 	PetFrame.Visible = true
 	PetName.Text = petData.Name
@@ -195,6 +213,7 @@ local function RevealPet(petData)
 end
 
 -- // Queue Processor
+-- Processes queued hatch animations one by one in order.
 local function ProcessAnimationQueue()
 	if isProcessingQueue then return end
 	isProcessingQueue = true
@@ -218,6 +237,7 @@ local function ProcessAnimationQueue()
 	end)
 end
 
+-- Handles the single egg hatching animation sequence, clicks, shakes, and reveal.
 function PetClient:HatchAnimation(petData, eggName, worldFolder)
 	if MainShopFrame then MainShopFrame.Visible = false end
 	for _, ui in ipairs(PlayerGUI:GetChildren()) do
@@ -305,6 +325,7 @@ function PetClient:HatchAnimation(petData, eggName, worldFolder)
 	end
 end
 
+-- Handles the triple egg hatching animation sequence simultaneously for 3 pets.
 function PetClient:TripleHatchAnimation(newPets, eggName, worldFolder)
 	if MainShopFrame then MainShopFrame.Visible = false end
 	for _, ui in ipairs(PlayerGUI:GetChildren()) do
@@ -416,6 +437,7 @@ function PetClient:TripleHatchAnimation(newPets, eggName, worldFolder)
 	end
 end
 
+-- Handles the 10x egg hatching animation sequence layout across two rows.
 function PetClient:TenHatchAnimation(newPets, eggName, worldFolder)
 	if MainShopFrame then MainShopFrame.Visible = false end
 	for _, ui in ipairs(PlayerGUI:GetChildren()) do
@@ -538,7 +560,7 @@ function PetClient:TenHatchAnimation(newPets, eggName, worldFolder)
 	if not isSkipped then SoundClone(BlockOpenSound) end
 	if isSkipped then task.wait(0.8) else WaitOrSkip(3.2) end
 
-	-- RIPRISTINO IL CONTAINER COME PRIMA
+	-- Restore container properties back to original layout
 	HatchingContainer.Size = originalContainerSize
 	HatchingContainer.AnchorPoint = originalContainerAnchor
 	HatchingContainer.Position = originalContainerPos
@@ -557,6 +579,7 @@ function PetClient:TenHatchAnimation(newPets, eggName, worldFolder)
 end
 
 -- // Purchase Requests
+-- Sends a single hatch request to the server or prompts a developer product purchase.
 function PetClient:PurchaseRequest(eggName, worldFolder)
 	if isHatching then return end
 
@@ -585,6 +608,7 @@ function PetClient:PurchaseRequest(eggName, worldFolder)
 	isHatching = false
 end
 
+-- Sends a triple hatch request to the server or handles group requirements and purchases.
 function PetClient:TriplePurchaseRequest(eggName, worldFolder)
 	if isHatching then return end
 
@@ -614,6 +638,7 @@ function PetClient:TriplePurchaseRequest(eggName, worldFolder)
 	isHatching = false
 end
 
+-- Prompts a 10x purchase for specific special eggs like Brainrot.
 function PetClient:TenXPurchaseRequest(eggName, worldFolder)
 	if eggName == "Brainrot EGG" or eggName == "Brainrot" then
 		MarketplaceService:PromptProductPurchase(Player, BRAINROT_PRODUCT_10X)
@@ -621,6 +646,7 @@ function PetClient:TenXPurchaseRequest(eggName, worldFolder)
 	end
 end
 
+-- Starts the auto-hatch background loop for standard eggs.
 function PetClient:StartAutoHatch(eggName, worldFolder)
 	if eggName == "GODLY EGG" or eggName == "GODLY1 EGG" or eggName == "DOMINUS EGG" or eggName == "Brainrot EGG" then return end
 	if isAutoHatching then return end
@@ -641,6 +667,7 @@ function PetClient:StartAutoHatch(eggName, worldFolder)
 	end)
 end
 
+-- Stops the auto-hatch loop and resets all related UI states.
 function PetClient:StopAutoHatch()
 	isAutoHatching = false
 	isHatching = false
@@ -657,6 +684,7 @@ function PetClient:StopAutoHatch()
 	end
 end
 
+-- Checks if the player owns the required gamepass before initiating auto-hatch.
 function PetClient:AutoHatchRequest(eggName, worldFolder)
 	if eggName == "GODLY EGG" or eggName == "GODLY1 EGG" or eggName == "DOMINUS EGG" or eggName == "Brainrot EGG" then return end
 	local ownsPass = GetData_RF:InvokeServer("GetClaimedData")
@@ -669,6 +697,7 @@ function PetClient:AutoHatchRequest(eggName, worldFolder)
 	end
 end
 
+-- Listens for paid hatch broadcast events from the server to queue up remote animations.
 PaidHatchBroadcast.OnClientEvent:Connect(function(hatchType, data)
 	local eggName = data and data.EggName or "COMMON EGG"
 	local worldFolder = data and data.WorldFolder or "World1"
@@ -682,10 +711,12 @@ PaidHatchBroadcast.OnClientEvent:Connect(function(hatchType, data)
 	ProcessAnimationQueue()
 end)
 
+-- Connects the stop button click event to abort auto-hatching.
 StopAutoHatch.Activated:Connect(function()
 	PetClient:StopAutoHatch()
 end)
 
+-- Returns whether a pet hatching sequence or animation queue is currently active.
 function PetClient:IsHatching(): boolean
 	return isHatching or #AnimationQueue > 0 or isProcessingQueue or HatchingContainer.Visible
 end
