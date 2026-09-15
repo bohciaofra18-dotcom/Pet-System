@@ -1,4 +1,4 @@
--- Connected Discord-GitHub: @roufox (Discord) / RobloxUser (Roblox)
+-- Connected Discord-GitHub: @_diegosxh_ (Discord) / @pasticcino074 (Roblox)
 
 -- // Services
 -- Initializing core Roblox services required for data handling, UI, sounds, and player management.
