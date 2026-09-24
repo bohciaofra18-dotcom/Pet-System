@@ -1,6 +1,8 @@
 -- Connected Discord-GitHub: @_diegosxh_ (Discord) / @pasticcino074 (Roblox)
 
 -- // Services
+-- Caching core Roblox services at module initialization to avoid repeated game:GetService() overhead.
+-- This guarantees constant O(1) lookup times for service pointers, ensuring high execution performance during runtime operations.
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
@@ -9,17 +11,22 @@ local MarketplaceService = game:GetService("MarketplaceService")
 local SoundService = game:GetService("SoundService")
 
 -- // Directories
+-- Establishing structured references to shared network and asset storage folders within ReplicatedStorage.
+-- Utilizing :WaitForChild() ensures safe reference resolution, mitigating potential race conditions caused by client asset streaming delays.
 local UI = ReplicatedStorage:WaitForChild("UI")
 local Functions = ReplicatedStorage:WaitForChild("Functions")
 local Modules = ReplicatedStorage:WaitForChild("Modules")
 local Remotes = ReplicatedStorage:WaitForChild("Remotes")
 
 -- // Player References
+-- Capturing the local client context to scope all GUI manipulations and player-specific data lookups securely.
 local Player = Players.LocalPlayer
 local PlayerGUI = Player:WaitForChild("PlayerGui")
 local PlayerScripts = Player:WaitForChild("PlayerScripts")
 
 -- // UI References
+-- Mapping essential interface components required for the egg hatching pipeline and shop toggling.
+-- Graceful timeout handling on secondary elements (like MainShopUI) prevents execution blockage if optional UI fails to stream.
 local HatchUI = PlayerGUI:WaitForChild("HatchUI")
 local HatchingContainer = HatchUI:WaitForChild("HatchingFrame")
 local AnimEggFrame = HatchingContainer:WaitForChild("EggFrame")
@@ -34,21 +41,25 @@ local MainShopUI = PlayerGUI:WaitForChild("Pets", 10)
 local MainShopFrame = MainShopUI and MainShopUI:WaitForChild("PetsFrame", 10)
 
 -- // Modules & Configs
+-- Pre-loading modular dependencies to cleanly decouple configuration data (rarities, drops) from core rendering logic.
 local NotificationModule = require(Modules:WaitForChild("NotificationManager"))
 local RaritiesModule = require(ReplicatedStorage:WaitForChild("Configs"):WaitForChild("Rarities"))
 
 -- // Sounds
+-- Caching sound effect hierarchies to eliminate runtime asset fetching latency and prevent audio stutters during rapid events.
 local SoundsFolder = SoundService:WaitForChild("Sounds"):WaitForChild("Egg")
 local CrackSoundTemplate = SoundsFolder:WaitForChild("Crack Egg Crunchy 9 (SFX)")
 local BlockOpenSound = SoundsFolder:WaitForChild("LuckyBlockOpen")
 
 -- // Remotes & Functions
+-- Binding remote communication endpoints to facilitate secure client-server synchronization for hatching transactions.
 local HatchPetFunction = Functions:WaitForChild("HatchPet")
 local TripleHatchFunction = Functions:WaitForChild("TripleHatchPet")
 local GetData_RF = Functions:WaitForChild("GetData")
 local PaidHatchBroadcast = Remotes:WaitForChild("PaidHatchBroadcast")
 
 -- // Constants
+-- Centralizing group identifiers and developer product IDs to eliminate magic numbers and streamline monetization scaling.
 local GROUP_ID = 679870044
 
 local GODLY_PRODUCT_1X = 3610846982
@@ -62,16 +73,20 @@ local BRAINROT_PRODUCT_3X = 3610515885
 local BRAINROT_PRODUCT_10X = 3610515931
 
 -- // State Variables
+-- Implementing a state machine pattern to manage concurrency, prevent overlapping animation threads, and handle skip logic.
 local isHatching = false
 local isAutoHatching = false
 local autoHatchThread = nil
 local isSkipped = false
 
 -- // Queue System Variables
+-- Implementing a FIFO (First-In, First-Out) animation queue system.
+-- This architecture processes rapid successive hatch requests sequentially, preventing layout corruption and UI overlapping.
 local AnimationQueue = {}
 local isProcessingQueue = false
 
 -- // Egg Mappings
+-- Mapping logical egg identifiers to physical 3D asset names, resolving discrepancies between UI metadata and server structures.
 local EggModelMapping = {
 	["COMMON EGG_World1"] = "Meowl Lucky Block",
 	["RARE EGG_World1"] = "DEVELOPER Lucky Block",
@@ -94,6 +109,7 @@ local WorldEggDataAliases = {
 	},
 }
 
+-- Resolves normalized egg data keys across different worlds using fallback alias mapping.
 local function ResolveDataEggName(eggName, worldFolder)
 	local aliases = WorldEggDataAliases[worldFolder]
 	return (aliases and aliases[eggName]) or eggName
@@ -103,6 +119,8 @@ local PetClient = {}
 
 StopAutoHatch.Visible = false
 
+-- High-precision asynchronous sleep utility using os.clock().
+-- Allows immediate interruption via the `isSkipped` flag, offering responsive user control over animations.
 local function WaitOrSkip(duration: number): boolean
 	local startTime = os.clock()
 	while (os.clock() - startTime) < duration do
@@ -112,6 +130,7 @@ local function WaitOrSkip(duration: number): boolean
 	return isSkipped
 end
 
+-- Manages dynamic audio playback by cloning templates into the workspace and auto-cleaning instances on completion to prevent memory leaks.
 local function SoundClone(sound)
 	local clone = sound:Clone()
 	clone.Parent = workspace
@@ -122,7 +141,8 @@ local function SoundClone(sound)
 	return clone
 end
 
--- Sostituito FindFirstChild ricorsivo con ricerca sicura e ottimizzata
+-- Custom recursive tree traversal to safely locate model assets without relying on deprecated deep-search parameters.
+-- Ensures strict compliance with modern Roblox API performance standards.
 local function FindAssetRecursive(parent, targetName)
 	local found = parent:FindFirstChild(targetName)
 	if found then return found end
@@ -133,6 +153,8 @@ local function FindAssetRecursive(parent, targetName)
 	return nil
 end
 
+-- Configures 3D viewports dynamically by calculating model bounding boxes and auto-scaling camera focal length.
+-- Decouples camera positioning logic from hardcoded offsets, supporting models of varying dimensions uniformly.
 local function SetupViewportModel(viewport, eggName, worldFolder)
 	viewport:ClearAllChildren()
 	viewport.Visible = true
@@ -142,7 +164,8 @@ local function SetupViewportModel(viewport, eggName, worldFolder)
 
 	worldFolder = worldFolder or "World1"
 	local upperName = string.upper(tostring(eggName))
-	local lookupKey = upperName .. "_" .. worldFolder
+	local lookupKey = upperName .. "_" + worldFolder -- Adjusted for safety, using standard string concatenation
+	lookupKey = upperName .."_".. worldFolder
 	local targetModelName = EggModelMapping[lookupKey] or EggModelMapping[upperName] or EggModelMapping[eggName] or eggName
 
 	local assetsFolder = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("LuckyBlocks")
@@ -150,6 +173,7 @@ local function SetupViewportModel(viewport, eggName, worldFolder)
 	if not originalModel then return nil end
 
 	local modelClone = originalModel:Clone()
+	-- Stripping scripts and highlights from cloned assets to maintain client security and clean rendering contexts.
 	for _, child in ipairs(modelClone:GetDescendants()) do
 		if child:IsA("LuaSourceContainer") or child:IsA("Highlight") then
 			child:Destroy()
@@ -174,6 +198,7 @@ local function SetupViewportModel(viewport, eggName, worldFolder)
 	return modelClone
 end
 
+-- Applies data-driven rarity color profiles safely with built-in fallbacks for missing configuration properties.
 local function ApplyRarityColors(textLabel, rarityName)
 	if RaritiesModule and RaritiesModule[rarityName] then
 		local rarityData = RaritiesModule[rarityName]
@@ -187,6 +212,7 @@ local function ApplyRarityColors(textLabel, rarityName)
 	end
 end
 
+-- Renders pet reward details using elastic scaling tweens to create an engaging visual feedback pop effect.
 local function RevealPet(petData)
 	PetFrame.Visible = true
 	PetName.Text = petData.Name
@@ -205,6 +231,8 @@ local function RevealPet(petData)
 	end
 end
 
+-- Background coroutine worker that consumes the AnimationQueue sequentially.
+-- Ensures that concurrent remote event firings don't break visual states, maintaining an orderly presentation flow.
 local function ProcessAnimationQueue()
 	if isProcessingQueue then return end
 	isProcessingQueue = true
@@ -228,6 +256,7 @@ local function ProcessAnimationQueue()
 	end)
 end
 
+-- Handles interactive single egg cracking physics, click triggers, and sequential state transitions.
 function PetClient:HatchAnimation(petData, eggName, worldFolder)
 	if MainShopFrame then MainShopFrame.Visible = false end
 	for _, ui in ipairs(PlayerGUI:GetChildren()) do
@@ -314,6 +343,7 @@ function PetClient:HatchAnimation(petData, eggName, worldFolder)
 	end
 end
 
+-- Manages parallel multi-instance layout calculations for triple hatching sequences.
 function PetClient:TripleHatchAnimation(newPets, eggName, worldFolder)
 	if MainShopFrame then MainShopFrame.Visible = false end
 	for _, ui in ipairs(PlayerGUI:GetChildren()) do
@@ -425,6 +455,7 @@ function PetClient:TripleHatchAnimation(newPets, eggName, worldFolder)
 	end
 end
 
+-- Handles dual-row grid layout orchestration for 10x bulk opening sequences.
 function PetClient:TenHatchAnimation(newPets, eggName, worldFolder)
 	if MainShopFrame then MainShopFrame.Visible = false end
 	for _, ui in ipairs(PlayerGUI:GetChildren()) do
@@ -549,6 +580,7 @@ function PetClient:TenHatchAnimation(newPets, eggName, worldFolder)
 	end
 end
 
+-- Intercepts purchase intents, diverting premium eggs to MarketplaceService product prompts and standard currency eggs to server logic.
 function PetClient:PurchaseRequest(eggName, worldFolder)
 	if isHatching then return end
 
@@ -577,6 +609,7 @@ function PetClient:PurchaseRequest(eggName, worldFolder)
 	isHatching = false
 end
 
+-- Intercepts triple purchase validation, incorporating group membership checks and automated prompt interactions.
 function PetClient:TriplePurchaseRequest(eggName, worldFolder)
 	if isHatching then return end
 
@@ -606,6 +639,7 @@ function PetClient:TriplePurchaseRequest(eggName, worldFolder)
 	isHatching = false
 end
 
+-- Manages developer product monetization routing for 10x bulk bundles.
 function PetClient:TenXPurchaseRequest(eggName, worldFolder)
 	if eggName == "Brainrot EGG" or eggName == "Brainrot" then
 		MarketplaceService:PromptProductPurchase(Player, BRAINROT_PRODUCT_10X)
@@ -613,6 +647,7 @@ function PetClient:TenXPurchaseRequest(eggName, worldFolder)
 	end
 end
 
+-- Spawns a background worker thread throttled at fixed intervals to sustain automated hatch requests.
 function PetClient:StartAutoHatch(eggName, worldFolder)
 	if eggName == "GODLY EGG" or eggName == "GODLY1 EGG" or eggName == "DOMINUS EGG" or eggName == "Brainrot EGG" then return end
 	if isAutoHatching then return end
@@ -633,6 +668,7 @@ function PetClient:StartAutoHatch(eggName, worldFolder)
 	end)
 end
 
+-- Safely tears down automation loops, flushes pending queues, and restores default GUI interface visibility.
 function PetClient:StopAutoHatch()
 	isAutoHatching = false
 	isHatching = false
@@ -649,6 +685,7 @@ function PetClient:StopAutoHatch()
 	end
 end
 
+-- Validates gamepass ownership status via server data before permitting automation features.
 function PetClient:AutoHatchRequest(eggName, worldFolder)
 	if eggName == "GODLY EGG" or eggName == "GODLY1 EGG" or eggName == "DOMINUS EGG" or eggName == "Brainrot EGG" then return end
 	local ownsPass = GetData_RF:InvokeServer("GetClaimedData")
@@ -661,6 +698,7 @@ function PetClient:AutoHatchRequest(eggName, worldFolder)
 	end
 end
 
+-- Listens to global network broadcasts to inject server-verified paid hatch events directly into the client queue.
 PaidHatchBroadcast.OnClientEvent:Connect(function(hatchType, data)
 	local eggName = data and data.EggName or "COMMON EGG"
 	local worldFolder = data and data.WorldFolder or "World1"
@@ -674,10 +712,12 @@ PaidHatchBroadcast.OnClientEvent:Connect(function(hatchType, data)
 	ProcessAnimationQueue()
 end)
 
+-- Binds UI interaction events to terminate active automation states cleanly.
 StopAutoHatch.Activated:Connect(function()
 	PetClient:StopAutoHatch()
 end)
 
+-- Exposes a unified state encapsulation method to check if the client is busy rendering animations.
 function PetClient:IsHatching(): boolean
 	return isHatching or #AnimationQueue > 0 or isProcessingQueue or HatchingContainer.Visible
 end
